@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Candy Crush Clone</title>
+<style>
+    /* Global styles */
+    :root {
+        --bg-color: #1a1a2e;
+        --ui-bg-color: rgba(255, 255, 255, 0.1);
+        --text-color: #e0e0e0;
+        --accent-color: #ff6b6b;
+        --board-bg: #2e3549;
+    }
+
+    * {
+        box-sizing: border-box;
+        font-family: 'Inter', sans-serif;
+    }
+
+    body {
+        margin: 0;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        width: 100%;
+        max-width: 600px;
+    }
+
+    .game-board-container {
+        position: relative;
+        width: 100%;
+        padding-top: 100%; /* Maintain 1:1 aspect ratio */
+        background: var(--board-bg);
+        border-radius: 15px;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        border-radius: 15px;
+    }
+
+    .ui-container {
+        display: flex;
+        justify-content: space-around;
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .ui-box {
+        background: var(--ui-bg-color);
+        padding: 10px 20px;
+        border-radius: 10px;
+        text-align: center;
+        min-width: 120px;
+    }
+    
+    .ui-box.full-width {
+        flex-grow: 1;
+    }
+
+    .ui-box h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
+
+    .ui-box p {
+        margin: 5px 0 0;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--accent-color);
+    }
+
+    .btn {
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 10px 25px;
+        border-radius: 10px;
+        font-size: 1rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: transform 0.2s, background-color 0.2s;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:hover {
+        background-color: #ff4747;
+        transform: translateY(-2px);
+    }
+
+    .overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        border-radius: 15px;
+        z-index: 10;
+        text-align: center;
+    }
+
+    .overlay h1 {
+        font-size: 3rem;
+        margin: 0;
+        text-transform: uppercase;
+        color: #fff;
+    }
+
+    .overlay p {
+        font-size: 1.2rem;
+        margin: 0;
+    }
+</style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="ui-container">
+            <div class="ui-box">
+                <h3>Level</h3>
+                <p id="level-display">1</p>
+            </div>
+            <div class="ui-box">
+                <h3>Goal</h3>
+                <p id="goal-display">0</p>
+            </div>
+            <div class="ui-box">
+                <h3>Score</h3>
+                <p id="score-display">0</p>
+            </div>
+            <div class="ui-box">
+                <h3>Moves Left</h3>
+                <p id="moves-display">30</p>
+            </div>
+        </div>
+        <div class="game-board-container">
+            <canvas id="game-canvas"></canvas>
+            <div id="game-overlay" class="overlay">
+                <h1 id="overlay-title">Candy Crush</h1>
+                <p id="overlay-message">Match 3 or more to score!</p>
+                <button id="start-btn" class="btn">Start Game</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Canvas Setup ---
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    const gameContainer = document.querySelector('.game-board-container');
+    const startButton = document.getElementById('start-btn');
+    const overlay = document.getElementById('game-overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayMessage = document.getElementById('overlay-message');
+    const scoreDisplay = document.getElementById('score-display');
+    const movesDisplay = document.getElementById('moves-display');
+    const levelDisplay = document.getElementById('level-display');
+    const goalDisplay = document.getElementById('goal-display');
+
+    // --- Game Configuration ---
+    const COLS = 8;
+    const ROWS = 8;
+    const TILE_SIZE = 60; // Base size, will be scaled
+    const ANIMATION_DURATION = 200; // milliseconds
+    
+    // An array of colors for the teddy bears
+    const CANDY_TYPES = [
+        '#ff6b6b', // Red
+        '#4ecdc4', // Cyan
+        '#f7d794', // Yellow
+        '#55efc4', // Green
+        '#a29bfe', // Purple
+        '#fdcb6e', // Orange
+    ];
+    
+    const CHOCOLATE_BOMB = CANDY_TYPES.length; // Index for the chocolate bomb
+    const CHOCOLATE_BOMB_COLOR = '#4a2c2a';
+    
+    // --- Levels Configuration ---
+    const LEVELS = [
+        { level: 1, goal: 500, moves: 25 },
+        { level: 2, goal: 1200, moves: 25 },
+        { level: 3, goal: 2500, moves: 20 },
+        { level: 4, goal: 4000, moves: 20 },
+        { level: 5, goal: 6000, moves: 15 },
+    ];
+
+    // --- Game State ---
+    let grid = [];
+    let selectedCandy = null;
+    let score = 0;
+    let moves = 0;
+    let isProcessing = false;
+    let isGameOver = false;
+    let tileSize = 0;
+    let currentLevel = 0;
+
+    // --- Utility Functions ---
+    function getRandomCandy() {
+        // Only return a regular candy type
+        return Math.floor(Math.random() * CANDY_TYPES.length);
+    }
+
+    function getCandyColor(type) {
+        if (type === CHOCOLATE_BOMB) {
+            return CHOCOLATE_BOMB_COLOR;
+        }
+        return CANDY_TYPES[type];
+    }
+
+    function updateSize() {
+        const size = Math.min(gameContainer.offsetWidth, gameContainer.offsetHeight);
+        canvas.width = size;
+        canvas.height = size;
+        tileSize = size / COLS;
+    }
+
+    function updateUI() {
+        scoreDisplay.textContent = score;
+        movesDisplay.textContent = moves;
+        levelDisplay.textContent = LEVELS[currentLevel].level;
+        goalDisplay.textContent = LEVELS[currentLevel].goal;
+    }
+
+    // --- Drawing Functions ---
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const candy = grid[r][c];
+                if (candy) {
+                    drawCandy(candy, c, r);
+                }
+            }
+        }
+        if (selectedCandy) {
+            drawSelection(selectedCandy.x, selectedCandy.y);
+        }
+    }
+
+    function drawCandy(candy, col, row) {
+        const x = col * tileSize + tileSize / 2;
+        const y = row * tileSize + tileSize / 2;
+        const radius = tileSize * 0.4;
+        const color = getCandyColor(candy.type);
+        
+        let currentX = x;
+        let currentY = y;
+        
+        // Animation logic
+        if (candy.animating) {
+            const timeElapsed = Date.now() - candy.animating.startTime;
+            const progress = Math.min(timeElapsed / ANIMATION_DURATION, 1);
+            const fromX = candy.animating.fromCol * tileSize + tileSize / 2;
+            const fromY = candy.animating.fromRow * tileSize + tileSize / 2;
+            const toX = col * tileSize + tileSize / 2;
+            const toY = row * tileSize + tileSize / 2;
+            
+            currentX = fromX + (toX - fromX) * progress;
+            currentY = fromY + (toY - fromY) * progress;
+
+            if (progress >= 1) {
+                candy.animating = null;
+            }
+        }
+
+        if (candy.type === CHOCOLATE_BOMB) {
+            drawChocolateBomb(currentX, currentY, radius);
+        } else {
+            drawTeddy(currentX, currentY, radius, color);
+        }
+
+        if (candy.animating && candy.animating.progress < 1) {
+            requestAnimationFrame(draw);
+        }
+    }
+
+    function drawTeddy(x, y, radius, color) {
+        ctx.save();
+        ctx.translate(x, y);
+        
+        // Main head
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        // Ears
+        const earRadius = radius * 0.4;
+        const earOffset = radius * 0.8;
+        ctx.beginPath();
+        ctx.arc(-earOffset, -earOffset, earRadius, 0, Math.PI * 2);
+        ctx.arc(earOffset, -earOffset, earRadius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        // Snout
+        const snoutRadius = radius * 0.3;
+        ctx.beginPath();
+        ctx.arc(0, radius * 0.3, snoutRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fill();
+
+        // Eyes
+        const eyeRadius = radius * 0.1;
+        const eyeOffset = radius * 0.4;
+        ctx.beginPath();
+        ctx.arc(-eyeOffset, -eyeOffset * 0.2, eyeRadius, 0, Math.PI * 2);
+        ctx.arc(eyeOffset, -eyeOffset * 0.2, eyeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'black';
+        ctx.fill();
+
+        ctx.restore();
+    }
+    
+    function drawChocolateBomb(x, y, radius) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Main sphere
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2);
+        ctx.fillStyle = CHOCOLATE_BOMB_COLOR;
+        ctx.fill();
+        
+        // Bomb fuse
+        ctx.beginPath();
+        ctx.moveTo(radius * 0.8, -radius);
+        ctx.lineTo(radius * 0.8, -radius * 1.5);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'gold';
+        ctx.stroke();
+
+        // White highlight
+        ctx.beginPath();
+        ctx.arc(radius * 0.4, -radius * 0.4, radius * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fill();
+
+        // Skull & Crossbones (optional, adds more detail)
+        ctx.font = `${radius * 1.2}px serif`;
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💣', 0, 0);
+
+        ctx.restore();
+    }
+
+
+    function drawSelection(col, row) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.strokeRect(col * tileSize, row * tileSize, tileSize, tileSize);
+    }
+
+    // --- Game Logic ---
+    function createBoard() {
+        grid = [];
+        for (let r = 0; r < ROWS; r++) {
+            grid[r] = [];
+            for (let c = 0; c < COLS; c++) {
+                let newCandy;
+                do {
+                    newCandy = getRandomCandy();
+                } while ((c >= 2 && grid[r][c - 1] && grid[r][c - 2] && grid[r][c - 1].type === newCandy && grid[r][c - 2].type === newCandy) ||
+                         (r >= 2 && grid[r - 1][c] && grid[r - 2][c] && grid[r - 1][c].type === newCandy && grid[r - 2][c].type === newCandy));
+                grid[r][c] = { type: newCandy };
+            }
+        }
+        draw();
+    }
+
+    function getMousePos(event) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
+        return {
+            x: Math.floor(x / tileSize),
+            y: Math.floor(y / tileSize)
+        };
+    }
+
+    function isAdjacent(pos1, pos2) {
+        const dx = Math.abs(pos1.x - pos2.x);
+        const dy = Math.abs(pos1.y - pos2.y);
+        return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
+    }
+
+    async function swapCandies(pos1, pos2) {
+        if (isProcessing || isGameOver) return;
+        const candy1 = grid[pos1.y][pos1.x];
+        const candy2 = grid[pos2.y][pos2.x];
+        
+        // Handle chocolate bomb interaction
+        if (candy1.type === CHOCOLATE_BOMB) {
+            // Swap the bomb and the selected candy
+            let tempCandy = grid[pos1.y][pos1.x];
+            grid[pos1.y][pos1.x] = grid[pos2.y][pos2.x];
+            grid[pos2.y][pos2.x] = tempCandy;
+            // The chocolate bomb will now clear all candies of the swapped candy's type
+            tempCandy.originalType = candy2.type;
+            
+            moves--;
+            await processMatches();
+            selectedCandy = null;
+            draw();
+            checkWinOrLose();
+            return;
+        } else if (candy2.type === CHOCOLATE_BOMB) {
+            // Swap the bomb and the selected candy
+            let tempCandy = grid[pos2.y][pos2.x];
+            grid[pos2.y][pos2.x] = grid[pos1.y][pos1.x];
+            grid[pos1.y][pos1.x] = tempCandy;
+            // The chocolate bomb will now clear all candies of the swapped candy's type
+            tempCandy.originalType = candy1.type;
+            
+            moves--;
+            await processMatches();
+            selectedCandy = null;
+            draw();
+            checkWinOrLose();
+            return;
+        }
+
+        if (!isAdjacent(pos1, pos2)) return;
+
+        // Animate the swap
+        candy1.animating = { fromCol: pos1.x, fromRow: pos1.y, startTime: Date.now() };
+        candy2.animating = { fromCol: pos2.x, fromRow: pos2.y, startTime: Date.now() };
+        [grid[pos1.y][pos1.x], grid[pos2.y][pos2.x]] = [grid[pos2.y][pos2.x], grid[pos1.y][pos1.x]];
+        isProcessing = true;
+        draw();
+        await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+        isProcessing = false;
+
+        const hasMatch = checkForMatches();
+        if (hasMatch) {
+            moves--;
+            updateUI();
+            await processMatches();
+        } else {
+            // Swap back if no match was made
+            candy1.animating = { fromCol: pos2.x, fromRow: pos2.y, startTime: Date.now() };
+            candy2.animating = { fromCol: pos1.x, fromRow: pos1.y, startTime: Date.now() };
+            [grid[pos1.y][pos1.x], grid[pos2.y][pos2.x]] = [grid[pos2.y][pos2.x], grid[pos1.y][pos1.x]];
+            isProcessing = true;
+            draw();
+            await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+            isProcessing = false;
+        }
+
+        selectedCandy = null;
+        draw();
+        checkWinOrLose();
+    }
+    
+    function checkForMatches() {
+        let matched = false;
+        const matchesFound = [];
+
+        // Horizontal matches
+        for (let r = 0; r < ROWS; r++) {
+            let currentMatch = [];
+            for (let c = 0; c < COLS; c++) {
+                // If it's a regular candy and matches the type
+                if (grid[r][c] && grid[r][c].type !== CHOCOLATE_BOMB && currentMatch.length > 0 && grid[r][c].type === grid[currentMatch[0].y][currentMatch[0].x].type) {
+                    currentMatch.push({ x: c, y: r });
+                } else {
+                    if (currentMatch.length >= 3) {
+                        matchesFound.push(currentMatch);
+                    }
+                    currentMatch = grid[r][c] && grid[r][c].type !== CHOCOLATE_BOMB ? [{ x: c, y: r }] : [];
+                }
+            }
+            if (currentMatch.length >= 3) {
+                matchesFound.push(currentMatch);
+            }
+        }
+        
+        // Vertical matches
+        for (let c = 0; c < COLS; c++) {
+            let currentMatch = [];
+            for (let r = 0; r < ROWS; r++) {
+                 // If it's a regular candy and matches the type
+                if (grid[r][c] && grid[r][c].type !== CHOCOLATE_BOMB && currentMatch.length > 0 && grid[r][c].type === grid[currentMatch[0].y][currentMatch[0].x].type) {
+                    currentMatch.push({ x: c, y: r });
+                } else {
+                    if (currentMatch.length >= 3) {
+                        matchesFound.push(currentMatch);
+                    }
+                    currentMatch = grid[r][c] && grid[r][c].type !== CHOCOLATE_BOMB ? [{ x: c, y: r }] : [];
+                }
+            }
+            if (currentMatch.length >= 3) {
+                matchesFound.push(currentMatch);
+            }
+        }
+
+        if (matchesFound.length > 0) {
+            matched = true;
+            // Mark candies for removal, and create bombs for 4+ matches
+            for (const match of matchesFound) {
+                if (match.length >= 4) {
+                    const bombPos = match[Math.floor(match.length / 2)];
+                    const originalType = grid[bombPos.y][bombPos.x].type;
+                    grid[bombPos.y][bombPos.x] = { type: CHOCOLATE_BOMB, originalType: originalType };
+                    
+                    for (const pos of match) {
+                        if (pos.x !== bombPos.x || pos.y !== bombPos.y) {
+                            grid[pos.y][pos.x].match = true;
+                        }
+                    }
+                } else { // Normal match of 3
+                    for (const pos of match) {
+                        grid[pos.y][pos.x].match = true;
+                    }
+                }
+            }
+        }
+        return matched;
+    }
+
+    async function processMatches() {
+        let cascadeOccurred = true;
+        while (cascadeOccurred) {
+            cascadeOccurred = false;
+            let matches = checkForMatches();
+            if (matches) {
+                isProcessing = true;
+                let candiesToRemove = [];
+                let bombToExplode = null;
+
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (grid[r][c] && grid[r][c].type === CHOCOLATE_BOMB && grid[r][c].originalType) {
+                            bombToExplode = { c, r, originalType: grid[r][c].originalType };
+                        }
+                        if (grid[r][c] && grid[r][c].match) {
+                            candiesToRemove.push({c, r, candy: grid[r][c]});
+                        }
+                    }
+                }
+                
+                if (bombToExplode) {
+                    // Explode the bomb, remove all teddies of the same original type
+                    for (let r = 0; r < ROWS; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            if (grid[r][c] && grid[r][c].type === bombToExplode.originalType) {
+                                candiesToRemove.push({c, r, candy: grid[r][c]});
+                            }
+                        }
+                    }
+                    // Remove the bomb itself
+                    grid[bombToExplode.r][bombToExplode.c] = null;
+                }
+
+                if (candiesToRemove.length > 0) {
+                    score += candiesToRemove.length * 10;
+                    updateUI();
+                    
+                    // Animate a simple "pop" effect
+                    candiesToRemove.forEach(p => {
+                       grid[p.r][p.c] = null;
+                    });
+                    
+                    draw();
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+                    
+                    dropCandies();
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+                    
+                    fillBoard();
+                    draw();
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+
+                    cascadeOccurred = checkForMatches();
+                }
+            }
+            isProcessing = false;
+            draw();
+        }
+    }
+
+    function dropCandies() {
+        for (let c = 0; c < COLS; c++) {
+            let emptySpaces = 0;
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (grid[r][c] === null) {
+                    emptySpaces++;
+                } else if (emptySpaces > 0) {
+                    grid[r + emptySpaces][c] = grid[r][c];
+                    grid[r][c] = null;
+                }
+            }
+        }
+    }
+
+    function fillBoard() {
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (grid[r][c] === null) {
+                    grid[r][c] = { type: getRandomCandy() };
+                }
+            }
+        }
+    }
+
+    function checkWinOrLose() {
+        if (score >= LEVELS[currentLevel].goal) {
+            // Level complete
+            if (currentLevel < LEVELS.length - 1) {
+                overlayTitle.textContent = "Level Complete!";
+                overlayMessage.textContent = "You've reached the score goal. On to the next level!";
+                startButton.textContent = "Next Level";
+                overlay.style.display = 'flex';
+                currentLevel++;
+            } else {
+                // All levels completed
+                overlayTitle.textContent = "You Win!";
+                overlayMessage.textContent = `You've completed all levels with a final score of ${score}!`;
+                startButton.textContent = "Play Again";
+                overlay.style.display = 'flex';
+                isGameOver = true;
+            }
+        } else if (moves <= 0) {
+            // Game over
+            isGameOver = true;
+            overlayTitle.textContent = "Game Over";
+            overlayMessage.textContent = `You didn't reach the goal. Your final score is ${score}.`;
+            startButton.textContent = "Play Again";
+            overlay.style.display = 'flex';
+        }
+    }
+
+    // --- Event Handlers ---
+    function handleMouseDown(e) {
+        if (isProcessing || isGameOver) return;
+        const pos = getMousePos(e);
+        if (pos.x >= 0 && pos.x < COLS && pos.y >= 0 && pos.y < ROWS) {
+            if (selectedCandy) {
+                // Second click
+                if (selectedCandy.x === pos.x && selectedCandy.y === pos.y) {
+                    selectedCandy = null; // Deselect
+                } else {
+                    swapCandies(selectedCandy, pos);
+                }
+            } else {
+                // First click
+                selectedCandy = pos;
+            }
+            draw();
+        }
+    }
+
+    function startGame() {
+        score = 0;
+        moves = LEVELS[currentLevel].moves;
+        isGameOver = false;
+        selectedCandy = null;
+        overlay.style.display = 'none';
+        updateUI();
+        updateSize();
+        createBoard();
+        canvas.addEventListener('mousedown', handleMouseDown);
+    }
+    
+    // Initial setup
+    window.addEventListener('resize', updateSize);
+    startButton.addEventListener('click', startGame);
+    
+    // Set initial display for the first level
+    updateUI();
+    updateSize();
+</script>
+</body>
+</html>
